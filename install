@@ -1,0 +1,306 @@
+
+#!/bin/bash
+#编译安装MySQL脚本
+#date:2019-10-18
+#Auther:liush
+#MAIL:lumia98@vip.qq.com
+#适用于RedHat平台系列
+
+clear
+
+echo "+------------------------------------------------------------------------+"
+echo "|          一、本脚本自带安装MySQL5.7,适用于RedHat平台系列                  |"
+echo "+------------------------------------------------------------------------+"
+echo "|          二、安装MySQL8.0版本,请修改My.cnf配置文件的binlog日期格式         |"
+echo "+------------------------------------------------------------------------+"
+echo "|          三、安装源码包请存放目录/opt/soft                               |"
+echo "+------------------------------------------------------------------------+"
+echo "+------------------------------------------------------------------------+"
+echo "|          四、安装之前请查看版本是否跟脚本一致                             |"
+echo "+------------------------------------------------------------------------+"
+echo "|               1.数据库源码包mysql_app=/opt/soft/mysql-5.7.27.tar.gz     |"
+echo "+------------------------------------------------------------------------+"
+echo "|               2. 依赖包boost_tar='boost_1_59_0.tar.bz2'                |"
+echo "+------------------------------------------------------------------------+"
+echo "+------------------------------------------------------------------------+"
+echo "|          五、加压后的安装包路径,若是版本不一致请修改脚本                   |"
+echo "+------------------------------------------------------------------------+"
+echo "|               1. 数据库mysql_make_dir=mysql-5.7.27                     |"
+echo "+------------------------------------------------------------------------+"
+echo "|               2. 依赖包boost_app_dir=boost_1_59_0                      |"
+echo "+------------------------------------------------------------------------+"
+
+
+echo "+------------------------------------------------------------------------+"
+echo "|          选择数字 1 则执行安装，选择数字 2 则推出安装                     |"
+echo "+------------------------------------------------------------------------+"
+
+
+#根据实际情况修改如下代码
+
+#源码包的存放目录
+main_app=/opt/soft
+#mysql包名称
+mysql_tar='mysql-5.7.27.tar.gz'
+mysql_make_dir=mysql-5.7.27
+#boost包名称
+boost_tar='boost_1_59_0.tar.bz2'
+boost_app_dir=boost_1_59_0
+
+#主目录(根据需要可修改)
+mysql_main=/opt/app/mysql
+# MySQL程序目录
+mysql_dir=${mysql_main}/dir
+# MySQL日志及sock等目录
+mysql_log=${mysql_main}/logs
+# MySQL数据库目录
+mysql_data=${mysql_main}/data
+# MySQL配置文件目录
+mysql_etc=${mysql_main}/etc
+
+#不需要修改
+#MySQL安装包完整路径
+mysql_app=${main_app}/$mysql_tar
+#MySQL依赖包完整路径
+boost_app=${main_app}/$boost_tar
+
+#解压安装包(若是提前解压了文件，请注释)
+Mysql_Tar(){
+    echo -e "\033[40;31m ------------解压MySQL安装包------------ \033[40;37m"
+    cd $main_app
+    tar xf $mysql_app
+    tar xf $boost_app
+}
+
+
+#删除系统自带my.cnf
+del_cnf(){
+    echo -e "\033[40;31m ------------删除系统自带my.cnf------------ \033[40;37m"
+    if [ -s /etc/my.cnf ]; then
+        rm -rf /etc/my.cnf*
+    fi
+}
+
+#安装依赖包(根据需要添加依赖包)
+relationships (){
+    echo -e "\033[40;31m ------------安装依赖包------------ \033[40;37m"
+    yum clean all
+    #依赖包
+    epel="epel-release"
+    App="ncurses-devel openssl-devel cmake glibc-devel libtirpc-devel"
+    #首选判断依赖包是否安装.
+    check=$(rpm -qa|grep $epel|wc -l)
+    if [ $check == 0 ];then
+        yum install $epel -y
+    fi
+    for i in $App
+    do
+      num=$(rpm -qa|grep $i|wc -l)
+      if [ $num == 0 ];then
+          yum install -y $i
+      fi
+    done
+}
+
+#开始编译安装
+Mysql_Make(){
+    echo -e "\033[40;31m ------------开始编译安装------------ \033[40;37m"
+    echo -e "\033[40;31m --详情查看/tmp/make_mysql.log------- \033[40;37m"
+    if [ -d ${main_app}/${mysql_make_dir} ]; then
+        cd ${main_app}/${mysql_make_dir}
+        cmake . -DCMAKE_INSTALL_PREFIX=${mysql_dir} \
+        -DMYSQL_DATADIR=${mysql_data} \
+        -DWITH_BOOST=$main_app/${boost_app_dir} \
+        -DSYSCONFDIR=${mysql_etc} \
+        -DWITH_INNOBASE_STORAGE_ENGINE=1 \
+        -DWITH_PARTITION_STORAGE_ENGINE=1 \
+        -DWITH_FEDERATED_STORAGE_ENGINE=1 \
+        -DWITH_BLACKHOLE_STORAGE_ENGINE=1 \
+        -DWITH_MYISAM_STORAGE_ENGINE=1 \
+        -DENABLED_LOCAL_INFILE=1 \
+        -DENABLE_DTRACE=0 \
+        -DDEFAULT_CHARSET=utf8mb4 \
+        -DDEFAULT_COLLATION=utf8mb4_general_ci \
+        -DWITH_EMBEDDED_SERVER=1 >/tmp/make_mysql.log
+
+          if [ $? == 0 ];then
+              sleep 2
+              make -j `grep processor /proc/cpuinfo | wc -l` >>/tmp/make_mysql.log && \
+              make install >>/tmp/make_mysql.log
+          fi
+    else
+        echo -e "\033[40;31m ------------目录不存在------------ \033[40;37m"
+        exit 1
+    fi
+}
+
+#判断安装的用户是否为管理员
+Install_Root(){
+    echo -e "\033[40;31m ------------判断安装用户是否root------------ \033[40;37m"
+    check_user=$(whoami)
+    if [ "$check_user" != "root" ];then
+        echo "please Use root"
+        exit 1
+    fi
+}
+
+#查找系统是否存在MySQL账户
+check_Mysql(){
+    echo -e "\033[40;31m ------------创建Mysql账户------------ \033[40;37m"
+    check_user=`cat /etc/passwd|grep mysql|awk -F : '{print $1}'`
+    if [ -z "$check_user" ];then
+        useradd -s /sbin/nologin mysql
+    else
+        echo "user mysql already exists!"
+    fi
+}
+
+#配置Mysql配置文件
+Config_MySQL(){
+    echo -e "\033[40;31m ------------开始配置简单的MySQL my.cnf------------ \033[40;37m"
+    cat > $mysql_etc/my.cnf << EOF
+[client]
+socket=/opt/app/mysql/logs/mysql.sock
+default-character-set = utf8
+
+[mysqld]
+        
+port=3306
+
+server-id=1
+                
+character-set-server=utf8
+
+basedir=/opt/app/mysql/dir
+
+datadir=/opt/app/mysql/data
+
+socket=/opt/app/mysql/logs/mysql.sock
+
+log-error=/opt/app/mysql/logs/mysql-error.log
+
+pid-file=/opt/app/mysql/logs/mysql.pid
+
+log_bin = Mysql-binlog
+
+binlog_cache_size = 64M
+
+max_binlog_cache_size = 128M
+
+max_binlog_size = 1G
+
+#mysql8.0默认不支持day方式,这里30天的期限
+#binlog_expire_logs_seconds = 2592000
+expire_logs_days = 60
+
+binlog-ignore-db = mysql
+
+binlog-ignore-db=information_schema
+
+binlog-ignore-db=performance_schema
+
+default-storage-engine = InnoDB
+EOF
+}
+
+#创建安装目录
+Install_DIR(){
+    echo -e "\033[40;31m ------------创建安装目录------------ \033[40;37m"
+    [ -d ${mysql_dir} ] || mkdir -p ${mysql_dir}
+    [ -d ${mysql_log} ] || mkdir -p ${mysql_log}
+    [ -d ${mysql_data} ] || mkdir -p ${mysql_data}
+    [ -d ${mysql_etc} ] || mkdir -p ${mysql_etc}
+}
+
+
+#初始化Mysql
+Mysql_initialize(){
+    echo -e "\033[40;31m ------------初始化Mysql,此处可能需要手动操作------------ \033[40;37m"
+    chown mysql.mysql -R $mysql_main
+    source /etc/profile
+    mysqld  --defaults-file=$mysql_etc/my.cnf --initialize --user=mysql
+}
+
+
+#配置MySQL环境变量
+Config_ENV(){
+    echo -e "\033[40;31m ------------配置MySQL环境变量------------ \033[40;37m"
+    #拷贝启动程序到init.d
+    \cp $mysql_dir/support-files/mysql.server /etc/init.d/mysqld
+    chmod +x /etc/init.d/mysqld
+    #开始配置环境变量
+    echo "export PATH=$PATH:$mysql_dir/bin" >>/etc/profile
+    source /etc/profile    
+}
+
+#启MySQL及密码显示
+Start_Mysql(){
+    echo -e "\033[40;31m ------------启动Mysql------------ \033[40;37m"
+    /etc/init.d/mysqld start
+    if [ $? = 0 ];then
+        echo -e "\033[40;31m Congratulations on the successful installation of MySQL \033[40;37m"
+        passwords=`more $mysql_log/mysql-error.log |grep "temporary password"|awk -F ":" '{print $4}'`
+        echo  " MySQL首次登陆密码 " $passwords
+        #配置开机自启
+        echo "/etc/init.d/mysqld start" >>/etc/rc.local
+        chmod +x /etc/rc.d/rc.local
+    else
+        echo "MySQL failed to start!"
+        echo "Please check the log"
+        exit 1
+    fi
+}
+
+
+#集合安装函数
+Main_install(){
+    #检测安装账户
+    Install_Root
+
+    #检测MySQL账户
+    check_Mysql
+
+    #删除自带my.cnf
+    del_cnf
+
+    #创建安装目录
+    Install_DIR
+
+    #安装依赖包
+    relationships
+
+    #解压安装包
+    Mysql_Tar
+
+    #开始编译安装
+    Mysql_Make
+
+    #配置Mysql配置文件
+    Config_MySQL
+
+    #配置MySQL环境变量
+    Config_ENV
+
+    #初始化Mysql
+    Mysql_initialize
+    
+    #启MySQL及密码显示
+    Start_Mysql
+}
+
+
+read -p "Please enter the required number: " Stack
+
+case "${Stack}" in
+    1)
+      #执行程序安装
+      Main_install
+      ;;
+    2)
+     #退出安装程序
+     exit 1
+     ;;
+    *)
+esac
+
+exit
