@@ -1,0 +1,47 @@
+
+#!/bin/bash
+# backup database
+# by liush
+
+#备份开始时间
+echo "start:" $(date +"%y-%m-%d %H:%M:%S")
+
+dbuser=root
+dbpasswd=密码
+#备份目录设定
+backup_jf=/db_backup/$(date +%y%m%d)
+mysql_data_dir=/opt/app/lnmp/mysql_dir/mysql/bin/
+dbnames=$(/opt/app/lnmp/mysql_dir/mysql/bin/mysql -u${dbuser} -p${dbpasswd} -e "show databases;"|grep -Evi "database|infor|perfor|testi|sys")
+
+#以当前的时间作为备份的数据库命名。
+dumpfile=$(date +%y%m%d%H%M)_jf
+
+#没有目录的话，创建备份文件目录
+if [ ! -d $backup_jf ]; then
+    mkdir -p $backup_jf
+fi
+
+cd $mysql_data_dir
+if [ -n "$dbnames" ];then
+    for name in $dbnames
+    do
+        ./mysqldump -d -u${dbuser} -p${dbpasswd} ${name} > $backup_jf/${name}_struct.sql
+        sleep 1
+        ./mysqldump -u${dbuser} -p${dbpasswd} ${name} > $backup_jf/${name}.sql
+        sleep 10
+    done
+fi
+echo "jf backup ok"
+
+#将备份数据库文件库压成ZIP文件，并删除先前的SQL文件。如果有错误信息也记入日志。
+
+cd /db_backup/
+tar zcvf ${dumpfile}.tar.gz $(date +%y%m%d)
+
+#删除7天前备份文件
+find /db_backup/ -type d -mtime +7 -exec rm -rf {} \;
+find /db_backup/ -type f -mtime +7 -exec rm -f {} \;
+
+echo "end:" $(date +"%y-%m-%d %H:%M:%S")
+echo "-----------------------------"
+exit
